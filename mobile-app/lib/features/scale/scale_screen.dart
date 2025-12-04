@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/neo_theme.dart';
 import '../../core/widgets/neo_widgets.dart';
 import '../../core/widgets/weight_gauge.dart';
+import '../../core/widgets/mock_debug_panel.dart';
 import '../../core/bluetooth/ble_service.dart';
+import '../../core/bluetooth/mock_ble_service.dart';
 
 class ScaleScreen extends ConsumerStatefulWidget {
   const ScaleScreen({super.key});
@@ -91,7 +93,7 @@ class _ScaleScreenState extends ConsumerState<ScaleScreen>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bleState = ref.watch(bleScaleProvider);
+    final bleState = ref.watch(bleStateProvider);
     final weight = bleState.weightData.weight;
     final isStable = bleState.weightData.isStable;
     final isConnected =
@@ -106,55 +108,62 @@ class _ScaleScreenState extends ConsumerState<ScaleScreen>
     return Scaffold(
       backgroundColor:
           isDark ? NeoColors.darkBackground : NeoColors.lightBackground,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Animated Header
-              _buildAnimatedHeader(
-                  isDark, isConnected, bleState.weightData.batteryLevel),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Animated Header
+                  _buildAnimatedHeader(
+                      isDark, isConnected, bleState.weightData.batteryLevel),
 
-              const SizedBox(height: 28),
+                  const SizedBox(height: 28),
 
-              // Weight Gauge - Centered
-              Center(
-                child: AnimatedWeightGauge(
-                  weight: weight,
-                  maxWeight: 5000,
-                  isStable: isStable,
-                  unit: 'g',
-                  size: 290,
-                ),
+                  // Weight Gauge - Centered
+                  Center(
+                    child: AnimatedWeightGauge(
+                      weight: weight,
+                      maxWeight: 5000,
+                      isStable: isStable,
+                      unit: 'g',
+                      size: 290,
+                    ),
+                  ),
+
+                  const SizedBox(height: 28),
+
+                  // Control Buttons Row
+                  _buildControlButtons(isDark),
+
+                  const SizedBox(height: 28),
+
+                  // Product Selection
+                  _buildProductSection(isDark),
+
+                  const SizedBox(height: 20),
+
+                  // Price Display
+                  if (selectedProduct != null)
+                    _buildPriceCard(
+                        isDark, selectedProduct, weight, totalPrice),
+
+                  const SizedBox(height: 20),
+
+                  // Action Buttons
+                  _buildActionButtons(isDark, totalPrice),
+
+                  const SizedBox(height: 20),
+                ],
               ),
-
-              const SizedBox(height: 28),
-
-              // Control Buttons Row
-              _buildControlButtons(isDark),
-
-              const SizedBox(height: 28),
-
-              // Product Selection
-              _buildProductSection(isDark),
-
-              const SizedBox(height: 20),
-
-              // Price Display
-              if (selectedProduct != null)
-                _buildPriceCard(isDark, selectedProduct, weight, totalPrice),
-
-              const SizedBox(height: 20),
-
-              // Action Buttons
-              _buildActionButtons(isDark, totalPrice),
-
-              const SizedBox(height: 20),
-            ],
+            ),
           ),
-        ),
+          // Mock BLE Debug Panel (only shows when useMockBLE is true)
+          const MockBLEDebugPanel(),
+        ],
       ),
     );
   }
@@ -303,7 +312,13 @@ class _ScaleScreenState extends ConsumerState<ScaleScreen>
           icon: Icons.restart_alt,
           size: 58,
           gradient: NeoColors.warningGradient,
-          onPressed: () => ref.read(bleScaleProvider.notifier).tare(),
+          onPressed: () {
+            if (useMockBLE) {
+              ref.read(mockBLEScaleProvider.notifier).tare();
+            } else {
+              ref.read(bleScaleProvider.notifier).tare();
+            }
+          },
         ),
         const SizedBox(width: 28),
         // Calibrate button
