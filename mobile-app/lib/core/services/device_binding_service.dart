@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 /// Device binding for secure ownership transfer.
 /// Binds phone device ID with ESP32 MAC address.
@@ -37,22 +38,41 @@ class DeviceBinding {
 /// Service to manage phone-ESP32 bindings
 class DeviceBindingService {
   static const _boxName = 'device_bindings';
+  static final DeviceInfoPlugin _deviceInfo = DeviceInfoPlugin();
+  static String? _cachedDeviceId;
 
-  /// Get unique phone device identifier
+  /// Get unique phone device identifier using device_info_plus
   static Future<String> getPhoneDeviceId() async {
-    // Use platform-specific device ID
-    // On real device, use device_info_plus package
-    // For now, generate a stable ID based on platform
+    // Return cached ID if available
+    if (_cachedDeviceId != null) return _cachedDeviceId!;
+
     try {
       if (Platform.isAndroid) {
-        // Would use AndroidId from device_info_plus
-        return 'android_${DateTime.now().millisecondsSinceEpoch}';
+        final androidInfo = await _deviceInfo.androidInfo;
+        // Use Android ID - unique to device + app signature
+        _cachedDeviceId = 'android_${androidInfo.id}';
       } else if (Platform.isIOS) {
-        // Would use identifierForVendor from device_info_plus
-        return 'ios_${DateTime.now().millisecondsSinceEpoch}';
+        final iosInfo = await _deviceInfo.iosInfo;
+        // Use identifierForVendor - unique per vendor
+        _cachedDeviceId = 'ios_${iosInfo.identifierForVendor ?? "unknown"}';
+      } else if (Platform.isWindows) {
+        final windowsInfo = await _deviceInfo.windowsInfo;
+        _cachedDeviceId = 'win_${windowsInfo.deviceId}';
+      } else if (Platform.isMacOS) {
+        final macInfo = await _deviceInfo.macOsInfo;
+        _cachedDeviceId = 'mac_${macInfo.systemGUID ?? "unknown"}';
+      } else if (Platform.isLinux) {
+        final linuxInfo = await _deviceInfo.linuxInfo;
+        _cachedDeviceId = 'linux_${linuxInfo.machineId ?? "unknown"}';
+      } else {
+        _cachedDeviceId = 'unknown_${DateTime.now().millisecondsSinceEpoch}';
       }
-    } catch (_) {}
-    return 'device_${DateTime.now().millisecondsSinceEpoch}';
+    } catch (e) {
+      // Fallback if device info fails
+      _cachedDeviceId = 'fallback_${DateTime.now().millisecondsSinceEpoch}';
+    }
+
+    return _cachedDeviceId!;
   }
 
   /// Check if phone is authorized to access specific ESP32
@@ -191,4 +211,9 @@ final deviceBindingProvider = Provider((ref) => DeviceBindingService());
 /// Provider for current phone's bound devices
 final myBoundDevicesProvider = FutureProvider<List<DeviceBinding>>((ref) {
   return DeviceBindingService.getMyBindings();
+});
+
+/// Provider for current device ID
+final deviceIdProvider = FutureProvider<String>((ref) {
+  return DeviceBindingService.getPhoneDeviceId();
 });
