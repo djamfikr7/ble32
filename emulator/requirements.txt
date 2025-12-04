@@ -1,0 +1,5 @@
+# BLE Scale Emulator
+# Python dependencies for laptop BLE peripheral emulation
+
+bleak>=0.21.0
+bless>=0.2.5
