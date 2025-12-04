@@ -19,14 +19,24 @@ Requirements:
     - bleak and bless Python packages
 """
 
+import sys
+import os
+
+# Add user site-packages to path for Windows
+user_site = os.path.join(os.environ.get('APPDATA', ''), 'Python', 'Python312', 'site-packages')
+if os.path.exists(user_site) and user_site not in sys.path:
+    sys.path.insert(0, user_site)
+
 import asyncio
 import struct
-import sys
 from typing import Any
 
 try:
     from bless import BlessServer, BlessGATTCharacteristic, GATTCharacteristicProperties, GATTAttributePermissions
-except ImportError:
+except ImportError as e:
+    print(f"❌ Missing 'bless' package: {e}")
+    print("Install with: pip install bless==0.2.5 bleak==0.21.1")
+    sys.exit(1)
     print("❌ Missing 'bless' package. Install with: pip install bless")
     sys.exit(1)
 

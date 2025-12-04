@@ -163,7 +163,7 @@ class MockBLEScaleNotifier extends StateNotifier<BLEScaleState> {
 // ============================================================================
 
 /// Set to true to use mock BLE, false for real hardware (or laptop emulator)
-const bool useMockBLE = false;
+const bool useMockBLE = true;
 
 /// Mock BLE provider (for testing)
 final mockBLEScaleProvider =
