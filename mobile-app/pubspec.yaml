@@ -1,0 +1,54 @@
+name: ble_scale
+description: ESP32 BLE Weight Measurement System with Neomorphism UI
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  
+  # BLE
+  flutter_blue_plus: ^1.35.2
+  
+  # State Management
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.6.1
+  
+  # Local Storage
+  hive_flutter: ^1.1.0
+  
+  # Charts
+  fl_chart: ^0.69.2
+  
+  # Printing (commented out - needs compatible version)
+  # blue_thermal_printer: ^1.2.3
+  # esc_pos_utils: ^1.1.0
+  
+  # UI
+  google_fonts: ^6.2.1
+  flutter_svg: ^2.0.10+1
+  intl: ^0.20.2
+  
+  # Utilities
+  permission_handler: ^11.3.1
+  uuid: ^4.5.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  build_runner: ^2.4.13
+  riverpod_generator: ^2.6.3
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/images/
+    - assets/icons/
+    - assets/l10n/
