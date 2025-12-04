@@ -1,159 +1,180 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 import 'ble_service.dart';
 
 /// Mock BLE Scale for testing without hardware.
-/// Simulates ESP32 weight readings, tare, and calibration.
+/// Can connect to Python emulator via WebSocket or run standalone simulation.
 class MockBLEScaleNotifier extends StateNotifier<BLEScaleState> {
   MockBLEScaleNotifier() : super(BLEScaleState()) {
-    // Auto-start simulation and connection for immediate feedback
-    _startWeightSimulation();
-    _startBatteryDrain();
-    // Auto-connect after short delay
-    Future.delayed(const Duration(milliseconds: 300), () {
-      state = state.copyWith(connectionState: BLEConnectionState.connected);
-    });
+    // Try connecting to emulator first
+    _connectToEmulator();
   }
 
-  Timer? _weightTimer;
-  Timer? _batteryTimer;
+  WebSocketChannel? _channel;
+  Timer? _reconnectTimer;
+
+  // Fallback simulation state (used if emulator not connected)
+  Timer? _simTimer;
   final Random _random = Random();
+  double _simWeight = 0.0;
+  double _simTarget = 0.0;
+  bool _useInternalSim = true;
 
-  // Simulation state
-  double _tareOffset = 0.0; // Tare offset
-  double _calibrationFactor = 1.0; // Calibration multiplier
-  int _batteryLevel = 87; // Simulated battery %
-  bool _isSimulating = true; // Start simulating immediately
+  /// Connect to Python emulator
+  void _connectToEmulator() {
+    try {
+      // Use localhost for Android emulator (10.0.2.2) or standard localhost
+      // For web/desktop, localhost works. For Android emulator, use 10.0.2.2
+      const url = 'ws://localhost:8765';
 
-  // Simulate adding/removing weight over time
-  double _targetWeight = 0.0;
-  double _currentWeight = 0.0;
+      print('🔌 Connecting to emulator at $url...');
+      _channel = WebSocketChannel.connect(Uri.parse(url));
 
-  /// Start scanning (simulates finding devices)
+      _channel!.stream.listen(
+        (message) {
+          _useInternalSim = false; // Emulator is active!
+          _parseEmulatorMessage(message);
+        },
+        onError: (error) {
+          print('❌ Emulator error: $error');
+          _useInternalSim = true;
+          _scheduleReconnect();
+        },
+        onDone: () {
+          print('🔌 Emulator disconnected');
+          _useInternalSim = true;
+          _scheduleReconnect();
+        },
+      );
+
+      // Auto-connect BLE state when emulator connects
+      state = state.copyWith(connectionState: BLEConnectionState.connected);
+    } catch (e) {
+      print('❌ Connection failed: $e');
+      _useInternalSim = true;
+      _scheduleReconnect();
+    }
+
+    // Start fallback simulation just in case
+    _startInternalSimulation();
+  }
+
+  void _scheduleReconnect() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(const Duration(seconds: 3), _connectToEmulator);
+  }
+
+  void _parseEmulatorMessage(dynamic message) {
+    try {
+      final data = jsonDecode(message);
+
+      if (data['type'] == 'weight') {
+        final weight = (data['weight'] as num).toDouble();
+        final isStable = data['stable'] as bool;
+        final battery = data['battery'] as int;
+
+        state = state.copyWith(
+          weightData: WeightData(
+            weight: weight,
+            unit: WeightUnit.grams,
+            isStable: isStable,
+            batteryLevel: battery,
+            errorCode: 0,
+          ),
+        );
+      }
+    } catch (e) {
+      print('⚠️ Error parsing emulator data: $e');
+    }
+  }
+
+  // ==========================================================================
+  // PUBLIC METHODS (Same as original MockBLE)
+  // ==========================================================================
+
   Future<void> startScan(
       {Duration timeout = const Duration(seconds: 3)}) async {
-    state = state.copyWith(
-      connectionState: BLEConnectionState.scanning,
-      scannedDevices: [],
-    );
-
-    // Simulate finding devices after a delay
+    state = state.copyWith(connectionState: BLEConnectionState.scanning);
     await Future.delayed(const Duration(milliseconds: 500));
-
     state = state.copyWith(connectionState: BLEConnectionState.connected);
   }
 
-  /// Stop scanning
-  Future<void> stopScan() async {
-    if (state.connectionState == BLEConnectionState.scanning) {
-      state = state.copyWith(connectionState: BLEConnectionState.disconnected);
-    }
-  }
+  Future<void> stopScan() async {}
 
-  /// Connect to mock device
   Future<void> connect(dynamic device) async {
     state = state.copyWith(connectionState: BLEConnectionState.connected);
-    _startWeightSimulation();
-    _startBatteryDrain();
   }
 
-  /// Disconnect
   Future<void> disconnect() async {
-    _stopSimulation();
-    state = state.copyWith(
-      connectionState: BLEConnectionState.disconnected,
-      weightData: WeightData.empty(),
-    );
+    state = state.copyWith(connectionState: BLEConnectionState.disconnected);
   }
 
-  /// Tare the scale (zero out current weight)
   Future<void> tare() async {
-    _tareOffset = _currentWeight;
-    _updateWeight();
-  }
-
-  /// Calibrate with known weight
-  Future<void> calibrate(double knownWeight) async {
-    if (_currentWeight > 10) {
-      _calibrationFactor = knownWeight / _currentWeight;
+    if (_channel != null && !_useInternalSim) {
+      _channel!.sink.add(jsonEncode({'command': 'tare'}));
+    } else {
+      _simWeight = 0; // Simple tare for internal sim
     }
   }
 
-  /// Simulate placing weight on scale
+  Future<void> calibrate(double knownWeight) async {
+    if (_channel != null && !_useInternalSim) {
+      _channel!.sink
+          .add(jsonEncode({'command': 'calibrate', 'weight': knownWeight}));
+    }
+  }
+
+  // Called by Debug Panel slider
   void simulateWeight(double grams) {
-    _targetWeight = grams;
+    if (_channel != null && !_useInternalSim) {
+      _channel!.sink
+          .add(jsonEncode({'command': 'set_weight', 'weight': grams}));
+    } else {
+      _simTarget = grams;
+    }
   }
 
-  /// Simulate removing all weight
-  void clearWeight() {
-    _targetWeight = 0;
-  }
-
-  /// Add random weight fluctuation
   void addFluctuation() {
-    _targetWeight += _random.nextDouble() * 100 - 50;
-    if (_targetWeight < 0) _targetWeight = 0;
+    simulateWeight(_simTarget + (_random.nextDouble() * 100 - 50));
   }
 
-  void _startWeightSimulation() {
-    _isSimulating = true;
-    _weightTimer?.cancel();
+  // ==========================================================================
+  // INTERNAL SIMULATION (Fallback)
+  // ==========================================================================
 
-    // Update weight every 100ms (10 Hz like real scale)
-    _weightTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
-      if (!_isSimulating) return;
+  void _startInternalSimulation() {
+    _simTimer?.cancel();
+    _simTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      if (!_useInternalSim) return;
 
-      // Smoothly move towards target weight
-      final diff = _targetWeight - _currentWeight;
-      _currentWeight += diff * 0.3; // Ease towards target
+      // Smooth move
+      final diff = _simTarget - _simWeight;
+      _simWeight += diff * 0.3;
 
-      // Add small noise for realism
+      // Noise
       final noise = (_random.nextDouble() - 0.5) * 0.5;
+      final displayWeight = _simWeight + noise;
 
-      _updateWeight(noise: noise);
+      state = state.copyWith(
+        weightData: WeightData(
+          weight: displayWeight.clamp(0, 50000),
+          unit: WeightUnit.grams,
+          isStable: (displayWeight - state.weightData.weight).abs() < 1.0,
+          batteryLevel: 85,
+          errorCode: 0,
+        ),
+      );
     });
-  }
-
-  void _startBatteryDrain() {
-    _batteryTimer?.cancel();
-    // Simulate slow battery drain
-    _batteryTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (_batteryLevel > 5) {
-        _batteryLevel--;
-        _updateWeight();
-      }
-    });
-  }
-
-  void _updateWeight({double noise = 0}) {
-    final displayWeight =
-        (_currentWeight - _tareOffset) * _calibrationFactor + noise;
-    final isStable = (displayWeight - state.weightData.weight).abs() < 1.0;
-
-    final weightData = WeightData(
-      weight: displayWeight.clamp(0, 50000), // Max 50kg
-      unit: WeightUnit.grams,
-      isStable: isStable,
-      batteryLevel: _batteryLevel,
-      errorCode: 0,
-    );
-
-    state = state.copyWith(weightData: weightData);
-  }
-
-  void _stopSimulation() {
-    _isSimulating = false;
-    _weightTimer?.cancel();
-    _batteryTimer?.cancel();
-    _currentWeight = 0;
-    _targetWeight = 0;
-    _tareOffset = 0;
   }
 
   @override
   void dispose() {
-    _stopSimulation();
+    _channel?.sink.close();
+    _reconnectTimer?.cancel();
+    _simTimer?.cancel();
     super.dispose();
   }
 }
@@ -162,16 +183,14 @@ class MockBLEScaleNotifier extends StateNotifier<BLEScaleState> {
 // PROVIDER CONFIGURATION
 // ============================================================================
 
-/// Set to true to use mock BLE, false for real hardware (or laptop emulator)
+/// Set to true to use mock BLE (internal or WebSocket), false for real hardware
 const bool useMockBLE = true;
 
-/// Mock BLE provider (for testing)
 final mockBLEScaleProvider =
     StateNotifierProvider<MockBLEScaleNotifier, BLEScaleState>((ref) {
   return MockBLEScaleNotifier();
 });
 
-/// Unified state provider that works with both mock and real
 final bleStateProvider = Provider<BLEScaleState>((ref) {
   if (useMockBLE) {
     return ref.watch(mockBLEScaleProvider);

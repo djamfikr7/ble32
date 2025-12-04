@@ -6,6 +6,11 @@ import '../../core/widgets/weight_gauge.dart';
 import '../../core/widgets/mock_debug_panel.dart';
 import '../../core/bluetooth/ble_service.dart';
 import '../../core/bluetooth/mock_ble_service.dart';
+import '../customers/customer_model.dart';
+import '../customers/customer_list_screen.dart';
+import '../cart/cart_model.dart';
+import '../cart/cart_service.dart';
+import '../cart/cart_screen.dart';
 
 class ScaleScreen extends ConsumerStatefulWidget {
   const ScaleScreen({super.key});
@@ -17,6 +22,7 @@ class ScaleScreen extends ConsumerStatefulWidget {
 class _ScaleScreenState extends ConsumerState<ScaleScreen>
     with TickerProviderStateMixin {
   String? _selectedProductId;
+  Customer? selectedCustomer;
   late AnimationController _headerAnimController;
   late Animation<double> _headerSlideAnimation;
   late Animation<double> _headerFadeAnimation;
@@ -141,6 +147,11 @@ class _ScaleScreenState extends ConsumerState<ScaleScreen>
 
                   const SizedBox(height: 28),
 
+                  // Customer Selection
+                  _buildCustomerSection(isDark),
+
+                  const SizedBox(height: 28),
+
                   // Product Selection
                   _buildProductSection(isDark),
 
@@ -165,6 +176,115 @@ class _ScaleScreenState extends ConsumerState<ScaleScreen>
           const MockBLEDebugPanel(),
         ],
       ),
+    );
+  }
+
+  Widget _buildCustomerSection(bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Customer',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : NeoColors.textPrimary,
+                ),
+              ),
+              if (selectedCustomer != null)
+                GestureDetector(
+                  onTap: () => setState(() => selectedCustomer = null),
+                  child: Text(
+                    'Clear',
+                    style: TextStyle(
+                      color: NeoColors.primaryGradient[0],
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        GestureDetector(
+          onTap: () async {
+            final result = await Navigator.push<Customer>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const CustomerListScreen(isSelectionMode: true),
+              ),
+            );
+            if (result != null) {
+              setState(() => selectedCustomer = result);
+            }
+          },
+          child: NeoCard(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: selectedCustomer != null
+                          ? NeoColors.blueGradient
+                          : [
+                              isDark ? Colors.white10 : Colors.grey.shade200,
+                              isDark ? Colors.white10 : Colors.grey.shade200,
+                            ],
+                    ),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    selectedCustomer != null
+                        ? Icons.person
+                        : Icons.person_add_alt_1,
+                    color: selectedCustomer != null
+                        ? Colors.white
+                        : (isDark ? Colors.white54 : NeoColors.textSecondary),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        selectedCustomer?.name ?? 'Select Customer',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: isDark ? Colors.white : NeoColors.textPrimary,
+                        ),
+                      ),
+                      if (selectedCustomer != null)
+                        Text(
+                          selectedCustomer!.phone,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: isDark
+                                ? Colors.white54
+                                : NeoColors.textSecondary,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right,
+                  color: isDark ? Colors.white54 : NeoColors.textSecondary,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -529,42 +649,122 @@ class _ScaleScreenState extends ConsumerState<ScaleScreen>
   }
 
   Widget _buildActionButtons(bool isDark, double totalPrice) {
-    return Row(
+    final cartCount = ref.watch(cartCountProvider);
+    final selectedProduct = _selectedProductId != null
+        ? _products.firstWhere((p) => p.id == _selectedProductId)
+        : null;
+    final weight = ref.watch(bleStateProvider).weightData.weight;
+
+    return Column(
       children: [
-        Expanded(
-          child: NeoButton(
-            gradient: NeoColors.successGradient,
-            onPressed: totalPrice > 0 ? () => _saveTransaction() : null,
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.save_alt, color: Colors.white, size: 22),
-                SizedBox(width: 10),
-                Text('Save',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              ],
-            ),
+        // Add to Cart button
+        NeoButton(
+          gradient: NeoColors.primaryGradient,
+          width: double.infinity,
+          onPressed: selectedProduct != null && weight > 0
+              ? () => _addToCart(selectedProduct, weight)
+              : null,
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.add_shopping_cart, color: Colors.white, size: 22),
+              SizedBox(width: 10),
+              Text('Add to Cart',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ],
           ),
         ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: NeoButton(
-            gradient: NeoColors.blueGradient,
-            onPressed: totalPrice > 0 ? () => _printReceipt() : null,
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.print, color: Colors.white, size: 22),
-                SizedBox(width: 10),
-                Text('Print',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              ],
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            // View Cart button with badge
+            Expanded(
+              child: NeoButton(
+                gradient: NeoColors.successGradient,
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const CartScreen()),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        const Icon(Icons.shopping_cart,
+                            color: Colors.white, size: 22),
+                        if (cartCount > 0)
+                          Positioned(
+                            right: -8,
+                            top: -8,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                '$cartCount',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(width: 10),
+                    Text('Cart ($cartCount)',
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
             ),
-          ),
+            const SizedBox(width: 16),
+            // Quick Save
+            Expanded(
+              child: NeoButton(
+                gradient: NeoColors.blueGradient,
+                onPressed: totalPrice > 0 ? () => _saveTransaction() : null,
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.save_alt, color: Colors.white, size: 22),
+                    SizedBox(width: 10),
+                    Text('Quick Save',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ],
+    );
+  }
+
+  void _addToCart(Product product, double weight) {
+    final cartItem = CartItem(
+      productId: product.id,
+      productName: product.name,
+      productIcon: product.icon,
+      pricePerKg: product.price,
+      weightGrams: weight,
+      customerName: selectedCustomer?.name,
+    );
+    ref.read(cartServiceProvider.notifier).addItem(cartItem);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${product.name} added to cart!'),
+        backgroundColor: NeoColors.successGradient[0],
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 1),
+      ),
     );
   }
 

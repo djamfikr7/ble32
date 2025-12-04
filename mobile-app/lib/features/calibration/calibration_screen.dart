@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/neo_theme.dart';
 import '../../core/widgets/neo_widgets.dart';
 import '../../core/bluetooth/ble_service.dart';
+import '../../core/bluetooth/mock_ble_service.dart';
 
 /// Calibration wizard screen
 class CalibrationScreen extends ConsumerStatefulWidget {
@@ -566,7 +567,11 @@ class _CalibrationScreenState extends ConsumerState<CalibrationScreen>
         setState(() => _isCalibrating = true);
 
         // Send calibration command
-        ref.read(bleScaleProvider.notifier).calibrate(_knownWeight);
+        if (useMockBLE) {
+          ref.read(mockBLEScaleProvider.notifier).calibrate(_knownWeight);
+        } else {
+          ref.read(bleScaleProvider.notifier).calibrate(_knownWeight);
+        }
 
         // Simulate calibration process
         Future.delayed(const Duration(seconds: 2), () {
